@@ -12,6 +12,7 @@ from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options
 from datetime import datetime, timedelta
 import random
+from urllib.parse import urlparse  # 新增，用于解析URL路径
 
 # -------------------- 日志配置 --------------------
 logging.basicConfig(
@@ -228,28 +229,18 @@ class Serv00LoginBot:
                         self.take_screenshot(f"error_click_failed_{name}")
                         return False, "登录按钮点击失败"
 
-                # ========== 改进后的登录判定逻辑 ==========
+                # ========== 修复后的登录判定逻辑 ==========
                 time.sleep(5)
                 current_url = self.driver.current_url or ''
-                page_title = (self.driver.title or '').lower()
                 page_source = (self.driver.page_source or '').lower()
+                # 解析URL路径
+                parsed = urlparse(current_url)
+                path = parsed.path.lower()
 
-                # ---- 1. 优先检查成功标志 ----
-                # 检查URL是否包含dashboard/panel/account等
-                success_url_patterns = ['dashboard', 'panel', 'account', 'home', 'index', 'admin', 'user']
-                # 检查页面是否包含"logout"/"退出"等
-                logout_keywords = ['logout', 'wyloguj', '退出', 'sign out', 'log out', '登出']
-
-                if any(p in current_url.lower() for p in success_url_patterns) \
-                   or any(k in page_source for k in logout_keywords):
-                    logger.info(f"✅ {name} 登录成功! (URL: {current_url})")
-                    self.take_screenshot(f"success_{name}")
-                    return True, "登录成功"
-
-                # ---- 2. 检查是否仍然在登录页（URL含/login） ----
+                # ---- 1. 首先检查是否仍在登录页（路径含 /login 等） ----
                 login_paths = ['/login', '/admin/login', '/signin', '/logon', '/auth']
-                if any(path in current_url.lower() for path in login_paths):
-                    # 如果还在登录页，进一步查找明确的错误消息
+                if any(p in path for p in login_paths):
+                    # 查找明确的错误消息元素
                     error_elements = self.driver.find_elements(
                         By.XPATH,
                         "//*[contains(@class, 'error') or contains(@class, 'alert-danger') or contains(@class, 'warning')]"
@@ -261,12 +252,23 @@ class Serv00LoginBot:
                                 logger.error(f"❌ {name} 登录失败: {el.text}")
                                 self.take_screenshot(f"error_{name}")
                                 return False, f"登录失败: {el.text[:50]}"
-                    # 如果没有找到可见错误，但仍在登录页，视为失败（因为登录后通常会跳转）
+                    # 没有可见错误但仍在登录页，视为失败
                     logger.warning(f"⚠️ {name} 仍在登录页，登录未成功")
                     self.take_screenshot(f"still_on_login_{name}")
                     return False, "登录后仍停留在登录页"
 
-                # ---- 3. 如果URL发生了变化且不是登录页，也没有明显错误，视为成功 ----
+                # ---- 2. 检查明确成功标志（路径包含 dashboard/panel/account 等，但排除登录页） ----
+                # 注意：这里只检查路径，不检查域名，避免误判
+                success_path_patterns = ['dashboard', 'panel', 'account', 'home', 'index', 'admin', 'user']
+                # 检查页面是否包含 logout 等登出关键词
+                logout_keywords = ['logout', 'wyloguj', '退出', 'sign out', 'log out', '登出']
+                if any(p in path for p in success_path_patterns) \
+                   or any(k in page_source for k in logout_keywords):
+                    logger.info(f"✅ {name} 登录成功! (URL: {current_url})")
+                    self.take_screenshot(f"success_{name}")
+                    return True, "登录成功"
+
+                # ---- 3. 如果路径不是登录页且无错误，视为成功（兜底） ----
                 logger.info(f"✅ {name} 登录成功 (URL跳转至 {current_url})")
                 self.take_screenshot(f"success_{name}")
                 return True, "登录成功"
