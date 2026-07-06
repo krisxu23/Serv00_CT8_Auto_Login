@@ -228,59 +228,48 @@ class Serv00LoginBot:
                         self.take_screenshot(f"error_click_failed_{name}")
                         return False, "登录按钮点击失败"
 
-                # ========== 修改的核心部分：更准确的登录判定 ==========
-                # 等待页面响应
+                # ========== 改进后的登录判定逻辑 ==========
                 time.sleep(5)
                 current_url = self.driver.current_url or ''
                 page_title = (self.driver.title or '').lower()
                 page_source = (self.driver.page_source or '').lower()
 
-                # 1. 检查是否有明确的错误提示（如"Invalid username"）
-                error_keywords = ['error', 'błąd', 'invalid', 'failed', 'unauthorized', 'forbidden', 'incorrect']
-                if any(kw in page_source for kw in error_keywords):
-                    # 进一步检查是否在错误容器中
-                    error_elements = self.driver.find_elements(By.XPATH, "//*[contains(@class, 'error') or contains(@class, 'alert-danger') or contains(@class, 'warning')]")
-                    for el in error_elements:
-                        if el.is_displayed():
-                            err_text = el.text.lower()
-                            if any(kw in err_text for kw in ['invalid', 'incorrect', 'wrong', 'error', 'failed']):
-                                logger.error(f"❌ {name} 登录失败: 发现错误信息 '{el.text}'")
-                                self.take_screenshot(f"error_{name}")
-                                return False, f"登录失败: {el.text[:50]}"
-                    # 即使没有找到可见的错误元素，如果页面包含错误关键词，也判定失败
-                    logger.error(f"❌ {name} 登录失败: 页面包含错误关键词")
-                    self.take_screenshot(f"error_page_{name}")
-                    return False, "登录失败（页面错误关键词）"
-
-                # 2. 检查是否还停留在登录页面（URL包含/login等）
-                login_paths = ['/login', '/admin/login', '/signin', '/logon', '/auth']
-                if any(path in current_url.lower() for path in login_paths):
-                    # 如果登录成功后重定向到登录页，通常表示失败
-                    logger.warning(f"⚠️ {name} 仍停留在登录页，登录可能未成功")
-                    self.take_screenshot(f"still_on_login_{name}")
-                    return False, "登录后仍停留在登录页"
-
-                # 3. 检查成功的明确标志：
-                #    a) URL 包含 dashboard / panel / account / home 等
-                #    b) 页面包含 "logout" / "wyloguj" / "退出" 等登出字样
+                # ---- 1. 优先检查成功标志 ----
+                # 检查URL是否包含dashboard/panel/account等
                 success_url_patterns = ['dashboard', 'panel', 'account', 'home', 'index', 'admin', 'user']
+                # 检查页面是否包含"logout"/"退出"等
                 logout_keywords = ['logout', 'wyloguj', '退出', 'sign out', 'log out', '登出']
+
                 if any(p in current_url.lower() for p in success_url_patterns) \
                    or any(k in page_source for k in logout_keywords):
                     logger.info(f"✅ {name} 登录成功! (URL: {current_url})")
                     self.take_screenshot(f"success_{name}")
                     return True, "登录成功"
 
-                # 4. 如果URL发生了变化，且不再是登录页，且没有错误，通常也视为成功（保守）
-                if not any(path in current_url.lower() for path in login_paths):
-                    logger.info(f"✅ {name} 登录成功 (URL跳转至 {current_url})")
-                    self.take_screenshot(f"success_{name}")
-                    return True, "登录成功"
+                # ---- 2. 检查是否仍然在登录页（URL含/login） ----
+                login_paths = ['/login', '/admin/login', '/signin', '/logon', '/auth']
+                if any(path in current_url.lower() for path in login_paths):
+                    # 如果还在登录页，进一步查找明确的错误消息
+                    error_elements = self.driver.find_elements(
+                        By.XPATH,
+                        "//*[contains(@class, 'error') or contains(@class, 'alert-danger') or contains(@class, 'warning')]"
+                    )
+                    for el in error_elements:
+                        if el.is_displayed():
+                            err_text = el.text.lower()
+                            if any(k in err_text for k in ['invalid', 'incorrect', 'wrong', 'error', 'failed']):
+                                logger.error(f"❌ {name} 登录失败: {el.text}")
+                                self.take_screenshot(f"error_{name}")
+                                return False, f"登录失败: {el.text[:50]}"
+                    # 如果没有找到可见错误，但仍在登录页，视为失败（因为登录后通常会跳转）
+                    logger.warning(f"⚠️ {name} 仍在登录页，登录未成功")
+                    self.take_screenshot(f"still_on_login_{name}")
+                    return False, "登录后仍停留在登录页"
 
-                # 5. 未能明确判定
-                logger.warning(f"⚠️ {name} 登录状态无法确定，URL: {current_url}")
-                self.take_screenshot(f"unknown_{name}")
-                return False, "登录状态未知（可能失败）"
+                # ---- 3. 如果URL发生了变化且不是登录页，也没有明显错误，视为成功 ----
+                logger.info(f"✅ {name} 登录成功 (URL跳转至 {current_url})")
+                self.take_screenshot(f"success_{name}")
+                return True, "登录成功"
 
             except Exception as e:
                 logger.error(f"❌ 在尝试 {url} 登录时出现异常: {e}")
