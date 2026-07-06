@@ -255,7 +255,7 @@ class Serv00LoginBot:
                     # 没有可见错误但仍在登录页，视为失败
                     logger.warning(f"⚠️ {name} 登录失败")
                     self.take_screenshot(f"still_on_login_{name}")
-                    return False, "登录后仍停留在登录页"
+                    return False, "登录失败"
 
                 # ---- 2. 检查明确成功标志（路径包含 dashboard/panel/account 等，但排除登录页） ----
                 # 注意：这里只检查路径，不检查域名，避免误判
